@@ -15,41 +15,42 @@ import sys
 reload(sys)
 sys.setdefaultencoding('utf8')
 
-
-class MyThread(threading.Thread):
-    def __init__(self, threadID, name, ip, fo, ferr):
-        threading.Thread.__init__(self)
-        self.threadID = threadID
-        self.name = name
-        self.ip = ip
-        self.fo = fo
-        self.ferr = ferr;
-        self.count = threadID
-
-    def run(self):
-        # print "Starting " + self.name
-        print_time(self.name, self.ip, self.count, self.fo, self.ferr)
-        # 获得锁，成功获得锁定后返回True
-        # 可选的timeout参数不填时将一直阻塞直到获得锁定
-        # 否则超时后将返回False
-        # threadLock.acquire()
-        # print_time(self.name, self.counter, 3)
-        # 释放锁
-        # threadLock.release()
+MAX_LENGTH = 10
+RESULT_SET_DOMAIN_COL = 0
+RESULT_SET_ISFINISHED_COL = 1
+RESULT_SET_DETAILS_COL = 2
+SCREEN = 0x1
+FILE_OUT = 0x4
+FILE_ERR = 0x8
+MAX_TRY_TIMES = 3
+WAIT_TIME = 5
+download_threads = []
+file_handler = {"in": None, "out": None, "err": None}
+count = 0
+allocate_exit_signal = False
+string_pool = Queue(10 * MAX_LENGTH)
 
 
-def print_time(threadName, ip, count, fo, ferr):
-    try:
-        w = whois.whois(ip)
-    except socket.error, arg:
-        (errno, err_msg) = arg
-        print "error with " + threadName + ", " + ip + " errMsg: " + err_msg + ", [" + errno + "]"
-        ferr.write("error with: %s -%s. Msg: %s, [%s]" % (threadName, ip, err_msg, errno))
-    else:
-        print "%s: %s %s" % (threadName, time.ctime(time.time()), ip)
-        fo.write("%s: %s\n" % (threadName, time.ctime(time.time())))
-        fo.write("%s - %s\n" % (ip, w.text))
-        fo.write("--------------------\n")
+# 完成一条内容的输出，输出内容不保证即刻执行
+# flag表示待输出的设备，0为退出线程，1为输出到屏幕
+def write_log(content, flag):
+    string_set = {"flag": flag, "content": content}
+    string_pool.put(string_set)
+
+
+# 向屏幕/文件输出信息的线程体
+def display_log():
+    while True:
+        string_set = string_pool.get()
+        if string_set["flag"] == 0:
+            break
+        else:
+            if string_set["flag"] & 0x1 == 0x1:
+                print string_set["content"]
+            if string_set["flag"] & 0x4 == 0x4:
+                file_handler["out"].write(string_set["content"])
+            if string_set["flag"] & 0x8 == 0x8:
+                file_handler["err"].write(string_set["content"])
 
 
 # 获取whois信息的函数，调用pywhois库的改进版本；获取的信息为json格式Unicode字符串
@@ -57,118 +58,152 @@ def query_whois(domain_set, result_list):
     try:
         w = whois.whois(domain_set["domain"])
     except socket.error, arg:
-        (errno, err_msg) = arg
-        print "error with " + ", " + domain_set["domain"] + " errMsg: " + err_msg + ", [" + errno + "]"
+        err_str = str(arg).replace('\n', '')
+        result_list.put((domain_set, False, "SocketError:"+err_str))
+        write_log("SocketError: %s with [%s]" %(err_str, domain_set["domain"]), SCREEN|FILE_ERR)
     except PywhoisError, arg:
-        print "PywhoisError: " + arg
+        err_str = str(arg).replace('\n', '')[:20]
+        result_list.put((domain_set, False, "PywhoisError:"+err_str))
+        write_log("PywhoisError: %s with %s" %(err_str, domain_set["domain"]), SCREEN|FILE_ERR)
     else:
         result_list.put((domain_set, True, w))
 
 
-threadLock = threading.Lock()
-threads = []
-ip_list = ['google.com', 'baidu.com', 'jd.com', 'facebook.com', 'twitter.com', 'bilibili.tv', 'qq.com', 'a.com',
-           'taobao.com', 'bh3.com', 'github.com', 'abc.com']
-
-
-def do():
-    count = 0
-    times = 1
-    fo = open("foo.txt", "w")
-    fi = open("fin.txt", "r")
-    ferr = open("ferr.txt", "w")
-    print "%s: %s" % ('Main start', time.ctime(time.time()))
-    for index in range(times):
-        # for ip_item in ip_list:
-        while 1:
-            lines = fi.readlines(10000)
-            if not lines:
-                break
-            for ip_item in lines:
-                count += 1
-                thread = MyThread(count, "Thread-" + str(count), ip_item[0:len(ip_item) - 1], fo, ferr)
-                thread.start()
-                threads.append(thread)
-                if count % 500 == 0:
-                    # time.sleep(1)
-                    exit_flag = True
-                    break
-            if exit_flag:
-                break
-
-    # 等待所有线程完成
-    for t in threads:
-        t.join()
-    print "%s: %s total rows:%s" % ('Main end', time.ctime(time.time()), count)
-    fi.close()
-    fo.close()
-    ferr.close()
-    print "Exiting Main Thread"
-
-
-MAX_LENGTH = 10
-RESULT_SET_DOMAIN_COL = 0
-RESULT_SET_ISFINISHED_COL = 1
-RESULT_SET_DETAILS_COL = 2
-download_threads = []
-global count
-count = 0
-
-
-def read_domain_to_ready(queue, fin):
-    domain = fin.readlines(1)
-    item = {"domain": domain, "try_times": 0, "server": None, "is_error": False}
-    queue.put(item)
+def read_domain_to_ready(queue):
+    try:
+        if count <= 50:
+            domain = file_handler["in"].readline()
+            if not domain:
+                return False
+        else:
+            return False
+    except IOError, args:
+        return False
+    else:
+        item = {"domain": domain[:-1], "try_times": 0, "server": None,
+                "error_msg": [], "is_error": False}
+        queue.put(item)
+        return True
 
 
 # 从ready队列中取出一个域名放入running队列中
 def ready2running(ready_queue, running_queue):
-    domain = ready_queue.get();
-    running_queue.append(domain);
+    domain = ready_queue.get()
+    running_queue.append(domain)
     return domain
+
 
 # 从running队列中删除值为domain_set的元素
 def remove_from_running(running_queue, domain_set):
     running_queue.remove(domain_set)
 
 
+def waiting2ready(waiting_queue, ready_queue, domain_set):
+    waiting_queue.remove(domain_set)
+    ready_queue.put(domain_set)
+
+
+def report_error(domain_set):
+    write_log("Domain ["+domain_set["domain"]+"] has been tried "+ str(MAX_TRY_TIMES)
+              +(" times with error message: %s" % domain_set["error_msg"]), SCREEN|FILE_ERR)
+
+
 # 分配线程，用来创建一个获取whois信息的下载线程
 def allocate(ready_queue, running_queue, waiting_queue, result_list):
-    while len(running_queue) + len(waiting_queue) + len(ready_queue) > 0:
+    while len(running_queue) + len(waiting_queue) + ready_queue.qsize() > 0:
+        # while not allocate_exit_signal:
+        # print "running: %d, waiting: %d, ready: %d" % (len(running_queue), len(waiting_queue), ready_queue.qsize())
+        write_log(("running: %d, waiting: %d, ready: %d"
+                   % (len(running_queue), len(waiting_queue), ready_queue.qsize())), SCREEN)
+
         global count
-        count = count + 1;
+        count = count + 1
         domain = ready2running(ready_queue, running_queue)
-        download_threads.append(BaseThread(query_whois, (domain, result_list), \
-                                           'Thread-' + count))
+        if domain["domain"] == "localhost":
+            break
+        thread = BaseThread.BaseThread(query_whois, (domain, result_list), 'Thread-' + repr(count))
+        thread.start()
+        download_threads.append(thread)
 
 
 def handle_result(ready_queue, running_queue, waiting_queue, result_list):
-    while len(ready_queue) + len(running_queue) + len(waiting_queue) == 0:
+    while ready_queue.qsize() + len(running_queue) + len(waiting_queue) > 0:
         result_set = result_list.get()
-        remove_from_running(result_set[RESULT_SET_DOMAIN_COL])
+        remove_from_running(running_queue, result_set[RESULT_SET_DOMAIN_COL])
         if result_set[RESULT_SET_ISFINISHED_COL]:  # 获取whois信息成功
+            read_domain_to_ready(ready_queue)
 
+            '''print "Query whois information of domain [=%s] succeed." \
+                  % result_set[RESULT_SET_DOMAIN_COL]["domain"]
+            file_handler["out"].write(
+                "Query whois information of domain [=%s] succeed."
+                % result_set[RESULT_SET_DOMAIN_COL]["domain"])'''
+            write_log("Query whois information of domain ["+
+                      result_set[RESULT_SET_DOMAIN_COL]["domain"]+"] succeed.",
+                      SCREEN|FILE_OUT)
+        else:
+            domain_set = result_set[RESULT_SET_DOMAIN_COL]
+            domain_set["try_times"] += 1
+            domain_set["error_msg"].append(result_set[RESULT_SET_DETAILS_COL])
+            if domain_set["try_times"] >= MAX_TRY_TIMES:
+                report_error(domain_set)
+                read_domain_to_ready(ready_queue)
+            else:
+                waiting_queue.append(domain_set)
+                thread = threading.Timer(WAIT_TIME,
+                                         waiting2ready,
+                                         (waiting_queue, ready_queue, domain_set))
+                thread.start()
 
 
 def main():
-    fin = open("fin.txt", "r")
+    file_handler["in"] = open("fin.txt", "r")
+    file_handler["out"] = open("fout.txt", "w")
+    file_handler["err"] = open("ferr.txt", "w")
+
     ready_queue = Queue(MAX_LENGTH)
     running_queue = []
-    waiting_queue = Queue(MAX_LENGTH)
+    waiting_queue = []
     result_list = Queue(MAX_LENGTH)
 
     # 读取一部分域名进入queue list
     for i in range(MAX_LENGTH):
-        read_domain_to_ready(ready_queue, fin)
+        if not read_domain_to_ready(ready_queue):
+            print "Cannot Initialize Ready Queue."
+            return
+
+    # 创建日志输出线程
+    log_thread = BaseThread.BaseThread(display_log, '', 'display_log')
+    log_thread.start()
 
     # 创建分发线程
-    allocate_thread = BaseThread(allocate, \
-                                 (ready_queue, running_queue, waiting_queue, result_list), \
-                                 'allocate')
+    allocate_thread = BaseThread.BaseThread(allocate,
+                                            (ready_queue, running_queue, waiting_queue, result_list),
+                                            'allocate')
+    allocate_thread.start()
+    # download_threads.append(allocate_thread)
 
-    #
-    handle_result_thread = BaseThread()
+    # 创建结果处理线程
+    handle_result_thread = BaseThread.BaseThread(handle_result,
+                                                 (ready_queue, running_queue, waiting_queue, result_list),
+                                                 'handle_result')
+    handle_result_thread.start()
+    download_threads.append(handle_result_thread)
+
+    # 等待所有线程完成
+    for t in download_threads:
+        t.join()
+
+    item = {"domain": "localhost", "try_times": 0, "server": None, "error_msg": [], "is_error": False}
+    ready_queue.put(item)
+    item = {"flag": 0x0, "content": None}
+    string_pool.put(item)
+    print "%s: %s total rows:%s" % ('Main end', time.ctime(time.time()), count)
+    file_handler["in"].close()
+    file_handler["out"].close()
+    file_handler["err"].close()
+    print "Exiting Main Thread"
 
 
 if __name__ == '__main__':
-    do()
+    main()

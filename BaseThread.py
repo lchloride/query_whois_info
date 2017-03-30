@@ -2,12 +2,13 @@ from time import ctime
 import threading
 
 
-class MyThread(threading.Thread):
+class BaseThread(threading.Thread):
     def __init__(self, func, args, name=''):
         threading.Thread.__init__(self)
         self.name = name
         self.func = func
         self.args = args
+        self.res = None
 
     def getResult(self):
         return self.res
