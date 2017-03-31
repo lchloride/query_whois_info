@@ -1,5 +1,6 @@
 from time import ctime
 import threading
+from log import Log
 
 
 class BaseThread(threading.Thread):
@@ -9,11 +10,12 @@ class BaseThread(threading.Thread):
         self.func = func
         self.args = args
         self.res = None
+        self.logger = Log.get_instance()
 
     def getResult(self):
         return self.res
 
     def run(self):
-        print 'starting', self.name, 'at:', ctime()
+        self.logger.write_log('starting', self.name, 'at:', ctime(), 1)
         self.res = apply(self.func, self.args)
-        print self.name, 'finished at:', ctime()
+        self.logger.write_log(self.name, 'finished at:', ctime(), 1)
