@@ -57,4 +57,4 @@ def display_log(string_pool, file_handler):
             for i, fh in enumerate(file_handler):
                 flag_bit = 2 ** (i + 1)
                 if string_set["flag"] & flag_bit == flag_bit:
-                    fh.write(string_set["content"])
+                    fh.write(string_set["content"]+'\n')

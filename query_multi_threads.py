@@ -16,7 +16,7 @@ from log import Log
 reload(sys)
 sys.setdefaultencoding('utf8')
 
-MAX_LENGTH = 10
+MAX_LENGTH = 400
 RESULT_SET_DOMAIN_COL = 0
 RESULT_SET_ISFINISHED_COL = 1
 RESULT_SET_DETAILS_COL = 2
@@ -24,36 +24,11 @@ SCREEN = 0x1
 FILE_OUT = 0x2
 FILE_ERR = 0x4
 MAX_TRY_TIMES = 3
-WAIT_TIME = 5
+WAIT_TIME = 15
 download_threads = []
 file_handler = {"in": None, "out": None, "err": None}
 count = 0
-#allocate_exit_signal = False
-#string_pool = Queue(10 * MAX_LENGTH)
-
 logger = None
-
-"""
-# 完成一条内容的输出，输出内容不保证即刻执行
-# flag表示待输出的设备，0为退出线程，1为输出到屏幕
-def write_log(content, flag):
-    string_set = {"flag": flag, "content": content}
-    string_pool.put(string_set)
-
-
-# 向屏幕/文件输出信息的线程体
-def display_log():
-    while True:
-        string_set = string_pool.get()
-        if string_set["flag"] == 0:
-            break
-        else:
-            if string_set["flag"] & 0x1 == 0x1:
-                print string_set["content"]
-            if string_set["flag"] & 0x4 == 0x4:
-                file_handler["out"].write(string_set["content"])
-            if string_set["flag"] & 0x8 == 0x8:
-                file_handler["err"].write(string_set["content"])"""
 
 
 # 获取whois信息的函数，调用pywhois库的改进版本；获取的信息为json格式Unicode字符串
@@ -62,19 +37,23 @@ def query_whois(domain_set, result_list):
         w = whois.whois(domain_set["domain"])
     except socket.error, arg:
         err_str = str(arg).replace('\n', '')
-        result_list.put((domain_set, False, "SocketError:"+err_str))
-        logger.write_log("SocketError: %s with [%s]" %(err_str, domain_set["domain"]), SCREEN|FILE_ERR)
+        result_list.put((domain_set, False, "SocketError:" + err_str))
+        logger.write_log("SocketError: %s with [%s]" % (err_str, domain_set["domain"]), SCREEN | FILE_ERR)
     except PywhoisError, arg:
         err_str = str(arg).replace('\n', '')[:20]
-        result_list.put((domain_set, False, "PywhoisError:"+err_str))
-        logger.write_log("PywhoisError: %s with %s" %(err_str, domain_set["domain"]), SCREEN|FILE_ERR)
+        result_list.put((domain_set, False, "PywhoisError:" + err_str))
+        logger.write_log("PywhoisError: %s with %s" % (err_str, domain_set["domain"]), SCREEN | FILE_ERR)
+    except AttributeError, arg:
+        err_str = str(arg).replace('\n', '')
+        result_list.put((domain_set, False, "AttributeError:" + err_str))
+        logger.write_log("AttributeError: %s with [%s]" % (err_str, domain_set["domain"]), SCREEN | FILE_ERR)
     else:
         result_list.put((domain_set, True, w))
 
 
 def read_domain_to_ready(queue):
     try:
-        if count <= 50:
+        if count <= 500:
             domain = file_handler["in"].readline()
             if not domain:
                 return False
@@ -107,8 +86,8 @@ def waiting2ready(waiting_queue, ready_queue, domain_set):
 
 
 def report_error(domain_set):
-    logger.write_log("Domain ["+domain_set["domain"]+"] has been tried "+ str(MAX_TRY_TIMES)
-              +(" times with error message: %s" % domain_set["error_msg"]), SCREEN|FILE_ERR)
+    logger.write_log("Domain [" + domain_set["domain"] + "] has been tried " + str(MAX_TRY_TIMES)
+                     + (" times with error message: %s" % domain_set["error_msg"]), SCREEN | FILE_ERR)
 
 
 # 分配线程，用来创建一个获取whois信息的下载线程
@@ -117,10 +96,14 @@ def allocate(ready_queue, running_queue, waiting_queue, result_list):
         # while not allocate_exit_signal:
         # print "running: %d, waiting: %d, ready: %d" % (len(running_queue), len(waiting_queue), ready_queue.qsize())
         logger.write_log(("running: %d, waiting: %d, ready: %d"
-                   % (len(running_queue), len(waiting_queue), ready_queue.qsize())), SCREEN)
+                          % (len(running_queue), len(waiting_queue), ready_queue.qsize())), SCREEN)
 
         global count
         count = count + 1
+	if count % 500 == 0:
+		time.sleep(1)
+		if count % 1000 == 0 and len(running_queue) > MAX_LENGTH/2:
+			time.sleep(1)
         domain = ready2running(ready_queue, running_queue)
         if domain["domain"] == "localhost":
             break
@@ -141,9 +124,9 @@ def handle_result(ready_queue, running_queue, waiting_queue, result_list):
             file_handler["out"].write(
                 "Query whois information of domain [=%s] succeed."
                 % result_set[RESULT_SET_DOMAIN_COL]["domain"])'''
-            logger.write_log("Query whois information of domain ["+
-                      result_set[RESULT_SET_DOMAIN_COL]["domain"]+"] succeed.",
-                      SCREEN|FILE_OUT)
+            logger.write_log("Query whois information of domain [" +
+                             result_set[RESULT_SET_DOMAIN_COL]["domain"] + "] succeed.",
+                             SCREEN | FILE_OUT)
         else:
             domain_set = result_set[RESULT_SET_DOMAIN_COL]
             domain_set["try_times"] += 1
@@ -178,7 +161,7 @@ def main():
     # 创建日志输出线程
     global logger
     out_file_handler_list = [file_handler["out"], file_handler["err"]]
-    logger = Log(MAX_LENGTH*10, out_file_handler_list)
+    logger = Log(MAX_LENGTH * 10, out_file_handler_list)
 
     # 创建分发线程
     allocate_thread = BaseThread.BaseThread(allocate,
@@ -209,6 +192,11 @@ def main():
 
     logger.kill()
     logger.get_thread().join()
+
+    file_handler["in"].close()
+    file_handler["out"].close()
+    file_handler["err"].close()
+
 
 if __name__ == '__main__':
     main()

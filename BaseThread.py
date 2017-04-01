@@ -16,6 +16,6 @@ class BaseThread(threading.Thread):
         return self.res
 
     def run(self):
-        self.logger.write_log('starting', self.name, 'at:', ctime(), 1)
+        self.logger.write_log('starting %s at: %s' %(self.name, ctime()), 1)
         self.res = apply(self.func, self.args)
-        self.logger.write_log(self.name, 'finished at:', ctime(), 1)
+        self.logger.write_log('%s finished at: %s' %(self.name, ctime()), 1)
