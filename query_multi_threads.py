@@ -16,7 +16,7 @@ from log import Log
 reload(sys)
 sys.setdefaultencoding('utf8')
 
-MAX_LENGTH = 400
+MAX_LENGTH = 100
 RESULT_SET_DOMAIN_COL = 0
 RESULT_SET_ISFINISHED_COL = 1
 RESULT_SET_DETAILS_COL = 2
@@ -24,11 +24,14 @@ SCREEN = 0x1
 FILE_OUT = 0x2
 FILE_ERR = 0x4
 MAX_TRY_TIMES = 3
-WAIT_TIME = 15
+WAIT_TIME = 10
 download_threads = []
 file_handler = {"in": None, "out": None, "err": None}
-count = 0
+thread_count = 0
+read_count = 0
 logger = None
+server_stat = {}
+server_ips = {}
 
 
 # 获取whois信息的函数，调用pywhois库的改进版本；获取的信息为json格式Unicode字符串
@@ -36,9 +39,10 @@ def query_whois(domain_set, result_list):
     try:
         w = whois.whois(domain_set["domain"])
     except socket.error, arg:
-        err_str = str(arg).replace('\n', '')
-        result_list.put((domain_set, False, "SocketError:" + err_str))
-        logger.write_log("SocketError: %s with [%s]" % (err_str, domain_set["domain"]), SCREEN | FILE_ERR)
+        err_str = str(arg[0]).replace('\n', '')
+        result_list.put((domain_set, False, "SocketError: %s at server [%s]" % (err_str, arg[1])))
+        logger.write_log("SocketError: %s with [%s] at server [%s]"
+                         % (err_str, domain_set["domain"], arg[1]), SCREEN | FILE_ERR)
     except PywhoisError, arg:
         err_str = str(arg).replace('\n', '')[:20]
         result_list.put((domain_set, False, "PywhoisError:" + err_str))
@@ -52,8 +56,9 @@ def query_whois(domain_set, result_list):
 
 
 def read_domain_to_ready(queue):
+    global read_count
     try:
-        if count <= 500:
+        if read_count <= 600000:
             domain = file_handler["in"].readline()
             if not domain:
                 return False
@@ -62,6 +67,7 @@ def read_domain_to_ready(queue):
     except IOError, args:
         return False
     else:
+        read_count += 1
         item = {"domain": domain[:-1], "try_times": 0, "server": None,
                 "error_msg": [], "is_error": False}
         queue.put(item)
@@ -98,16 +104,19 @@ def allocate(ready_queue, running_queue, waiting_queue, result_list):
         logger.write_log(("running: %d, waiting: %d, ready: %d"
                           % (len(running_queue), len(waiting_queue), ready_queue.qsize())), SCREEN)
 
-        global count
-        count = count + 1
-	if count % 500 == 0:
-		time.sleep(1)
-		if count % 1000 == 0 and len(running_queue) > MAX_LENGTH/2:
-			time.sleep(1)
+        global thread_count
+        thread_count += 1
+        if thread_count % 500 == 0:
+            time.sleep(2)
+            if thread_count % 1000 == 0 and len(running_queue) > MAX_LENGTH / 2:
+                time.sleep(5)
+        else:
+            time.sleep(0.01)
         domain = ready2running(ready_queue, running_queue)
         if domain["domain"] == "localhost":
             break
-        thread = BaseThread.BaseThread(query_whois, (domain, result_list), 'Thread-' + repr(count))
+        thread = BaseThread.BaseThread(query_whois, (domain, result_list), 'Thread-' +
+                                       repr(thread_count))
         thread.start()
         download_threads.append(thread)
 
@@ -117,6 +126,11 @@ def handle_result(ready_queue, running_queue, waiting_queue, result_list):
         result_set = result_list.get()
         remove_from_running(running_queue, result_set[RESULT_SET_DOMAIN_COL])
         if result_set[RESULT_SET_ISFINISHED_COL]:  # 获取whois信息成功
+            hostname = result_set[RESULT_SET_DETAILS_COL][1]
+            if hostname in server_stat:
+                server_stat[hostname] += 1
+            else:
+                server_stat[hostname] = 1
             read_domain_to_ready(ready_queue)
 
             '''print "Query whois information of domain [=%s] succeed." \
@@ -125,7 +139,8 @@ def handle_result(ready_queue, running_queue, waiting_queue, result_list):
                 "Query whois information of domain [=%s] succeed."
                 % result_set[RESULT_SET_DOMAIN_COL]["domain"])'''
             logger.write_log("Query whois information of domain [" +
-                             result_set[RESULT_SET_DOMAIN_COL]["domain"] + "] succeed.",
+                             result_set[RESULT_SET_DOMAIN_COL]["domain"] + "] succeed at server ["+
+                             result_set[RESULT_SET_DETAILS_COL][1]+"].",
                              SCREEN | FILE_OUT)
         else:
             domain_set = result_set[RESULT_SET_DOMAIN_COL]
@@ -163,6 +178,8 @@ def main():
     out_file_handler_list = [file_handler["out"], file_handler["err"]]
     logger = Log(MAX_LENGTH * 10, out_file_handler_list)
 
+    st_time = time.time()
+
     # 创建分发线程
     allocate_thread = BaseThread.BaseThread(allocate,
                                             (ready_queue, running_queue, waiting_queue, result_list),
@@ -184,7 +201,12 @@ def main():
     item = {"domain": "localhost", "try_times": 0, "server": None, "error_msg": [], "is_error": False}
     ready_queue.put(item)
 
-    logger.write_log("%s: %s total rows:%s" % ('Main end', time.ctime(time.time()), count), SCREEN)
+    logger.write_log("%s: Duration:%s total rows:%s (threads:%s)"
+                     % ('Main end', time.time()-st_time, read_count, thread_count), SCREEN)
+    logger.write_log("Server Distribution:", SCREEN)
+    for key in server_stat.keys():
+        logger.write_log("%s - %d" % (key, server_stat[key]), SCREEN)
+
     file_handler["in"].close()
     file_handler["out"].close()
     file_handler["err"].close()
@@ -192,10 +214,6 @@ def main():
 
     logger.kill()
     logger.get_thread().join()
-
-    file_handler["in"].close()
-    file_handler["out"].close()
-    file_handler["err"].close()
 
 
 if __name__ == '__main__':
