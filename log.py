@@ -1,6 +1,7 @@
 # coding=utf-8
 
 from Queue import Queue
+import sys
 
 import BaseThread
 
@@ -40,16 +41,21 @@ class Log(object):
     def get_thread(self):
         return self.thread
 
-    @ staticmethod
+    @staticmethod
     def get_instance():
         return Log.__instance
 
 
 # 向屏幕/文件输出信息的线程体
 def display_log(string_pool, file_handler):
+    buf = ['']
+    for i in range(len(file_handler) + 1):
+        buf.append('')
     while True:
         string_set = string_pool.get()
         if string_set["flag"] == 0:
+            for i, fh in enumerate(file_handler):
+                fh.write(buf[i + 1])
             break
         else:
             if string_set["flag"] & 0x1 == 0x1:
@@ -57,4 +63,7 @@ def display_log(string_pool, file_handler):
             for i, fh in enumerate(file_handler):
                 flag_bit = 2 ** (i + 1)
                 if string_set["flag"] & flag_bit == flag_bit:
-                    fh.write(string_set["content"]+'\n')
+                    buf[i + 1] += string_set["content"] + '\n'
+                    if sys.getsizeof(buf[i + 1]) >= 4037:
+                        fh.write(buf[i + 1])
+                        buf[i + 1] = ''

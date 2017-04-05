@@ -11,27 +11,32 @@ import sys
 import whois
 from whois.parser import PywhoisError
 from log import Log
+from threadpool import WorkRequest, WorkerThread, ThreadPool, NoResultsPending
 
 # 使用utf-8编码
 reload(sys)
 sys.setdefaultencoding('utf8')
 
-MAX_LENGTH = 100
+MAX_LENGTH = 120
 RESULT_SET_DOMAIN_COL = 0
 RESULT_SET_ISFINISHED_COL = 1
 RESULT_SET_DETAILS_COL = 2
 SCREEN = 0x1
 FILE_OUT = 0x2
 FILE_ERR = 0x4
+FILE_RETRY = 0x8
+FILE_IN_SERVER = 0x10
 MAX_TRY_TIMES = 3
 WAIT_TIME = 10
 download_threads = []
-file_handler = {"in": None, "out": None, "err": None}
+file_handler = {"in": None, "out": None, "err": None, "retry": None, "in_server": None}
 thread_count = 0
 read_count = 0
 logger = None
 server_stat = {}
 server_ips = {}
+read_buffer = []
+READ_BUFFER_SIZE = 1000
 
 
 # 获取whois信息的函数，调用pywhois库的改进版本；获取的信息为json格式Unicode字符串
@@ -56,16 +61,21 @@ def query_whois(domain_set, result_list):
 
 
 def read_domain_to_ready(queue):
-    global read_count
+    global read_count, read_buffer, READ_BUFFER_SIZE
     try:
         if read_count <= 600000:
-            domain = file_handler["in"].readline()
+            if read_count == 0:
+                read_buffer = file_handler["in"].readlines()
+            domain = read_buffer[read_count]
             if not domain:
                 return False
         else:
             return False
     except IOError, args:
         return False
+    except IndexError, args:
+        logger.write_log("index: %s, length: %s" % (read_count, len(read_buffer)), SCREEN)
+        raise IndexError, args
     else:
         read_count += 1
         item = {"domain": domain[:-1], "try_times": 0, "server": None,
@@ -93,7 +103,9 @@ def waiting2ready(waiting_queue, ready_queue, domain_set):
 
 def report_error(domain_set):
     logger.write_log("Domain [" + domain_set["domain"] + "] has been tried " + str(MAX_TRY_TIMES)
-                     + (" times with error message: %s" % domain_set["error_msg"]), SCREEN | FILE_ERR)
+                     + (" times with error message: %s" % domain_set["error_msg"]),
+                     SCREEN | FILE_ERR)
+    logger.write_log("%s" % domain_set["domain"], FILE_RETRY)
 
 
 # 分配线程，用来创建一个获取whois信息的下载线程
@@ -132,22 +144,27 @@ def handle_result(ready_queue, running_queue, waiting_queue, result_list):
             else:
                 server_stat[hostname] = 1
             read_domain_to_ready(ready_queue)
-
-            '''print "Query whois information of domain [=%s] succeed." \
-                  % result_set[RESULT_SET_DOMAIN_COL]["domain"]
-            file_handler["out"].write(
-                "Query whois information of domain [=%s] succeed."
-                % result_set[RESULT_SET_DOMAIN_COL]["domain"])'''
             logger.write_log("Query whois information of domain [" +
-                             result_set[RESULT_SET_DOMAIN_COL]["domain"] + "] succeed at server ["+
-                             result_set[RESULT_SET_DETAILS_COL][1]+"].",
+                             result_set[RESULT_SET_DOMAIN_COL]["domain"] + "] succeed at server [" +
+                             result_set[RESULT_SET_DETAILS_COL][1] + "].",
                              SCREEN | FILE_OUT)
+            logger.write_log("%s / %s" % (result_set[RESULT_SET_DOMAIN_COL]["domain"],
+                                          result_set[RESULT_SET_DETAILS_COL][1]),
+                             FILE_IN_SERVER)
+
         else:
             domain_set = result_set[RESULT_SET_DOMAIN_COL]
             domain_set["try_times"] += 1
             domain_set["error_msg"].append(result_set[RESULT_SET_DETAILS_COL])
             if domain_set["try_times"] >= MAX_TRY_TIMES:
                 report_error(domain_set)
+                if result_set[RESULT_SET_DETAILS_COL][1] is not None:
+                    logger.write_log("%s / %s" % (result_set[RESULT_SET_DOMAIN_COL]["domain"],
+                                                  result_set[RESULT_SET_DETAILS_COL][1]),
+                                     FILE_IN_SERVER)
+                else:
+                    logger.write_log("%s / " % (result_set[RESULT_SET_DOMAIN_COL]["domain"]),
+                                     FILE_IN_SERVER)
                 read_domain_to_ready(ready_queue)
             else:
                 waiting_queue.append(domain_set)
@@ -161,6 +178,8 @@ def main():
     file_handler["in"] = open("fin.txt", "r")
     file_handler["out"] = open("fout.txt", "w")
     file_handler["err"] = open("ferr.txt", "w")
+    file_handler["retry"] = open("retry.txt", "w")
+    file_handler["in_server"] = open("fin_server.txt", "w")
 
     ready_queue = Queue(MAX_LENGTH)
     running_queue = []
@@ -175,7 +194,8 @@ def main():
 
     # 创建日志输出线程
     global logger
-    out_file_handler_list = [file_handler["out"], file_handler["err"]]
+    out_file_handler_list = [file_handler["out"], file_handler["err"],
+                             file_handler["retry"], file_handler["in_server"]]
     logger = Log(MAX_LENGTH * 10, out_file_handler_list)
 
     st_time = time.time()
@@ -202,18 +222,21 @@ def main():
     ready_queue.put(item)
 
     logger.write_log("%s: Duration:%s total rows:%s (threads:%s)"
-                     % ('Main end', time.time()-st_time, read_count, thread_count), SCREEN)
+                     % ('Main end', time.time() - st_time, read_count, thread_count), SCREEN)
     logger.write_log("Server Distribution:", SCREEN)
     for key in server_stat.keys():
         logger.write_log("%s - %d" % (key, server_stat[key]), SCREEN)
 
-    file_handler["in"].close()
-    file_handler["out"].close()
-    file_handler["err"].close()
     logger.write_log("Exiting Main Thread", SCREEN)
 
     logger.kill()
     logger.get_thread().join()
+
+    file_handler["in"].close()
+    file_handler["out"].close()
+    file_handler["err"].close()
+    file_handler["retry"].close()
+    file_handler["in_server"].close()
 
 
 if __name__ == '__main__':
