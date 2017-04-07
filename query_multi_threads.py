@@ -4,8 +4,12 @@
 import threading
 import time
 from Queue import Queue
+import traceback
 
 import socket
+
+import datetime
+
 import BaseThread
 import sys
 import whois
@@ -28,7 +32,8 @@ FILE_RETRY = 0x8
 FILE_IN_SERVER = 0x10
 MAX_TRY_TIMES = 3
 WAIT_TIME = 10
-download_threads = []
+# download_threads = []
+thread_pool = ThreadPool(MAX_LENGTH)
 file_handler = {"in": None, "out": None, "err": None, "retry": None, "in_server": None}
 thread_count = 0
 read_count = 0
@@ -40,7 +45,7 @@ READ_BUFFER_SIZE = 1000
 
 
 # 获取whois信息的函数，调用pywhois库的改进版本；获取的信息为json格式Unicode字符串
-def query_whois(domain_set, result_list):
+def query_whois(domain_set, result_list, **kwds):
     try:
         w = whois.whois(domain_set["domain"])
     except socket.error, arg:
@@ -55,15 +60,21 @@ def query_whois(domain_set, result_list):
     except AttributeError, arg:
         err_str = str(arg).replace('\n', '')
         result_list.put((domain_set, False, "AttributeError:" + err_str))
-        logger.write_log("AttributeError: %s with [%s]" % (err_str, domain_set["domain"]), SCREEN | FILE_ERR)
+        logger.write_log("AttributeError: %s with [%s]"
+                         % (err_str, domain_set["domain"]), SCREEN | FILE_ERR)
+        # logger.write_log("AttributeError: %s with [%s]. Trace:%s"
+          #               % (err_str, domain_set["domain"], traceback.print_stack()), SCREEN|FILE_ERR)
     else:
-        result_list.put((domain_set, True, w))
+        if w is not None:
+            result_list.put((domain_set, True, w))
+        else:
+            result_list.put((domain_set, False, "Result is None."))
 
 
 def read_domain_to_ready(queue):
     global read_count, read_buffer, READ_BUFFER_SIZE
     try:
-        if read_count <= 600000:
+        if read_count <= 100000:
             if read_count == 0:
                 read_buffer = file_handler["in"].readlines()
             domain = read_buffer[read_count]
@@ -75,7 +86,7 @@ def read_domain_to_ready(queue):
         return False
     except IndexError, args:
         logger.write_log("index: %s, length: %s" % (read_count, len(read_buffer)), SCREEN)
-        raise IndexError, args
+        return False
     else:
         read_count += 1
         item = {"domain": domain[:-1], "try_times": 0, "server": None,
@@ -127,10 +138,16 @@ def allocate(ready_queue, running_queue, waiting_queue, result_list):
         domain = ready2running(ready_queue, running_queue)
         if domain["domain"] == "localhost":
             break
-        thread = BaseThread.BaseThread(query_whois, (domain, result_list), 'Thread-' +
+        '''thread = BaseThread.BaseThread(query_whois, (domain, result_list), 'Thread-' +
                                        repr(thread_count))
         thread.start()
-        download_threads.append(thread)
+        download_threads.append(thread)'''
+        req = WorkRequest(query_whois, args=(domain, result_list), kwds={"threadname":'Thread-' +
+                                       repr(thread_count)})
+        thread_pool.putRequest(req)
+        strptime = datetime.datetime.strptime
+        thread_pool.poll()
+    thread_pool.stop()
 
 
 def handle_result(ready_queue, running_queue, waiting_queue, result_list):
@@ -138,7 +155,10 @@ def handle_result(ready_queue, running_queue, waiting_queue, result_list):
         result_set = result_list.get()
         remove_from_running(running_queue, result_set[RESULT_SET_DOMAIN_COL])
         if result_set[RESULT_SET_ISFINISHED_COL]:  # 获取whois信息成功
-            hostname = result_set[RESULT_SET_DETAILS_COL][1]
+            try:
+                hostname = result_set[RESULT_SET_DETAILS_COL][1]
+            except TypeError, arg:
+                logger.write_log("[%s]result_set: %s" % (arg, result_set), SCREEN)
             if hostname in server_stat:
                 server_stat[hostname] += 1
             else:
@@ -212,11 +232,13 @@ def main():
                                                  (ready_queue, running_queue, waiting_queue, result_list),
                                                  'handle_result')
     handle_result_thread.start()
-    download_threads.append(handle_result_thread)
+    handle_result_thread.join()
+
+    '''download_threads.append(handle_result_thread)
 
     # 等待所有线程完成
     for t in download_threads:
-        t.join()
+        t.join()'''
 
     item = {"domain": "localhost", "try_times": 0, "server": None, "error_msg": [], "is_error": False}
     ready_queue.put(item)

@@ -9,6 +9,7 @@ import sys
 import threading
 import Queue
 import traceback
+from log import Log
 
 
 # 定义一些Exception，用于自定义异常处理
@@ -44,6 +45,7 @@ class WorkerThread(threading.Thread):
         '''设置一个flag信号，用来表示该线程是否还被dismiss,默认为false'''
         self._dismissed = threading.Event()
         self.start()
+        self.logger = Log.get_instance()
 
     def run(self):
         '''每个线程尽可能多的执行work，所以采用loop，
@@ -67,7 +69,7 @@ class WorkerThread(threading.Thread):
                 try:
                     '''执行callable，讲请求和结果以tuple的方式放入requestQueue'''
                     result = request.callable(*request.args, **request.kwds)
-                    print self.getName()
+                    # self.logger.write_log("%s started." %self.getName(), 0x1)
                     self._resultQueue.put((request, result))
                 except:
                     '''异常处理'''
@@ -124,6 +126,7 @@ class ThreadPool:
         self.dismissedWorkers = []
         self.workRequests = {}  # 设置个字典，方便使用
         self.createWorkers(num_workers, poll_timeout)
+        self.logger = Log.get_instance()
 
     def createWorkers(self, num_workers, poll_timeout=5):
         '''创建num_workers个WorkThread,默认timeout为5'''
@@ -170,6 +173,7 @@ class ThreadPool:
                     request.exc_callback(request, result)
                 if request.callback and not (request.exception and request.exc_callback):
                     request.callback(request, result)
+                # self.logger.write_log("%s finished" %request.kwds["threadname"])
                 del self.workRequests[request.requestID]
             except Queue.Empty:
                 break
