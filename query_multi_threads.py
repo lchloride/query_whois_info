@@ -30,11 +30,13 @@ FILE_OUT = 0x2
 FILE_ERR = 0x4
 FILE_RETRY = 0x8
 FILE_IN_SERVER = 0x10
+FILE_WHOIS_ERR = 0x20
 MAX_TRY_TIMES = 3
-WAIT_TIME = 10
+WAIT_TIME = 15
 # download_threads = []
 thread_pool = ThreadPool(MAX_LENGTH)
-file_handler = {"in": None, "out": None, "err": None, "retry": None, "in_server": None}
+file_handler = {"in": None, "out": None, "err": None, "retry": None, "in_server": None,
+                "whois_err": None}
 thread_count = 0
 read_count = 0
 logger = None
@@ -47,23 +49,35 @@ READ_BUFFER_SIZE = 1000
 # 获取whois信息的函数，调用pywhois库的改进版本；获取的信息为json格式Unicode字符串
 def query_whois(domain_set, result_list, **kwds):
     try:
-        w = whois.whois(domain_set["domain"])
+        if domain_set["try_times"] % 3 == 0:
+            w = whois.whois(domain_set["domain"])
+        elif domain_set["try_times"] % 3 == 1:
+            w = whois.whois(domain_set["domain"], None, {"ip": "120.24.245.193", "port": 1080})
+        elif domain_set["try_times"] % 3 == 2:
+            w = whois.whois(domain_set["domain"], None, {"ip": "27.152.181.217", "port": 8080})
     except socket.error, arg:
         err_str = str(arg[0]).replace('\n', '')
-        result_list.put((domain_set, False, "SocketError: %s at server [%s]" % (err_str, arg[1])))
-        logger.write_log("SocketError: %s with [%s] at server [%s]"
-                         % (err_str, domain_set["domain"], arg[1]), SCREEN | FILE_ERR)
+        result_list.put((domain_set, False, "SocketError: %s at server [%s] times:%d"
+                         % (err_str, arg[1], domain_set["try_times"])))
+        logger.write_log("SocketError: %s with [%s] at server [%s] times:%d"
+                         % (err_str, domain_set["domain"], arg[1], domain_set["try_times"]), SCREEN | FILE_ERR)
     except PywhoisError, arg:
-        err_str = str(arg).replace('\n', '')[:20]
+        err_str = str(arg).replace('\n', '')
         result_list.put((domain_set, False, "PywhoisError:" + err_str))
-        logger.write_log("PywhoisError: %s with %s" % (err_str, domain_set["domain"]), SCREEN | FILE_ERR)
+        logger.write_log("PywhoisError: %s with %s" % (err_str[:20], domain_set["domain"]),
+                         SCREEN | FILE_ERR)
+        if err_str.find('No match for') == -1 and \
+            err_str.find('Not found') == -1 and \
+                err_str.find('not found') == -1:
+            logger.write_log("PywhoisError: %s with %s" % (err_str, domain_set["domain"]),
+                             FILE_WHOIS_ERR)
     except AttributeError, arg:
         err_str = str(arg).replace('\n', '')
         result_list.put((domain_set, False, "AttributeError:" + err_str))
         logger.write_log("AttributeError: %s with [%s]"
                          % (err_str, domain_set["domain"]), SCREEN | FILE_ERR)
         # logger.write_log("AttributeError: %s with [%s]. Trace:%s"
-          #               % (err_str, domain_set["domain"], traceback.print_stack()), SCREEN|FILE_ERR)
+        #               % (err_str, domain_set["domain"], traceback.print_stack()), SCREEN|FILE_ERR)
     else:
         if w is not None:
             result_list.put((domain_set, True, w))
@@ -142,8 +156,8 @@ def allocate(ready_queue, running_queue, waiting_queue, result_list):
                                        repr(thread_count))
         thread.start()
         download_threads.append(thread)'''
-        req = WorkRequest(query_whois, args=(domain, result_list), kwds={"threadname":'Thread-' +
-                                       repr(thread_count)})
+        req = WorkRequest(query_whois, args=(domain, result_list),
+                          kwds={"threadname": 'Thread-' + repr(thread_count)})
         thread_pool.putRequest(req)
         strptime = datetime.datetime.strptime
         thread_pool.poll()
@@ -171,7 +185,12 @@ def handle_result(ready_queue, running_queue, waiting_queue, result_list):
             logger.write_log("%s / %s" % (result_set[RESULT_SET_DOMAIN_COL]["domain"],
                                           result_set[RESULT_SET_DETAILS_COL][1]),
                              FILE_IN_SERVER)
-
+            if result_set[RESULT_SET_DOMAIN_COL]["try_times"] != 0:
+                logger.write_log("Query whois information of domain [" +
+                                 result_set[RESULT_SET_DOMAIN_COL]["domain"] + "] succeed at server [" +
+                                 result_set[RESULT_SET_DETAILS_COL][1] + "] through proxy. " +
+                                 str(result_set[RESULT_SET_DOMAIN_COL]["try_times"]),
+                                 FILE_ERR)
         else:
             domain_set = result_set[RESULT_SET_DOMAIN_COL]
             domain_set["try_times"] += 1
@@ -200,6 +219,7 @@ def main():
     file_handler["err"] = open("ferr.txt", "w")
     file_handler["retry"] = open("retry.txt", "w")
     file_handler["in_server"] = open("fin_server.txt", "w")
+    file_handler["whois_err"] = open("pywhoiserror.txt", "w")
 
     ready_queue = Queue(MAX_LENGTH)
     running_queue = []
@@ -215,7 +235,8 @@ def main():
     # 创建日志输出线程
     global logger
     out_file_handler_list = [file_handler["out"], file_handler["err"],
-                             file_handler["retry"], file_handler["in_server"]]
+                             file_handler["retry"], file_handler["in_server"],
+                             file_handler["whois_err"]]
     logger = Log(MAX_LENGTH * 10, out_file_handler_list)
 
     st_time = time.time()
@@ -259,6 +280,7 @@ def main():
     file_handler["err"].close()
     file_handler["retry"].close()
     file_handler["in_server"].close()
+    file_handler["whois_err"].close()
 
 
 if __name__ == '__main__':
