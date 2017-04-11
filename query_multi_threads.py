@@ -21,7 +21,7 @@ from threadpool import WorkRequest, WorkerThread, ThreadPool, NoResultsPending
 reload(sys)
 sys.setdefaultencoding('utf8')
 
-MAX_LENGTH = 120
+MAX_LENGTH = 100
 RESULT_SET_DOMAIN_COL = 0
 RESULT_SET_ISFINISHED_COL = 1
 RESULT_SET_DETAILS_COL = 2
@@ -32,7 +32,7 @@ FILE_RETRY = 0x8
 FILE_IN_SERVER = 0x10
 FILE_WHOIS_ERR = 0x20
 MAX_TRY_TIMES = 3
-WAIT_TIME = 15
+WAIT_TIME = 10
 # download_threads = []
 thread_pool = ThreadPool(MAX_LENGTH)
 file_handler = {"in": None, "out": None, "err": None, "retry": None, "in_server": None,
@@ -53,8 +53,10 @@ def query_whois(domain_set, result_list, **kwds):
             w = whois.whois(domain_set["domain"])
         elif domain_set["try_times"] % 3 == 1:
             w = whois.whois(domain_set["domain"], None, {"ip": "120.24.245.193", "port": 1080})
+            #w = whois.whois(domain_set["domain"])
         elif domain_set["try_times"] % 3 == 2:
             w = whois.whois(domain_set["domain"], None, {"ip": "27.152.181.217", "port": 8080})
+            #w = whois.whois(domain_set["domain"])
     except socket.error, arg:
         err_str = str(arg[0]).replace('\n', '')
         result_list.put((domain_set, False, "SocketError: %s at server [%s] times:%d"
@@ -88,7 +90,7 @@ def query_whois(domain_set, result_list, **kwds):
 def read_domain_to_ready(queue):
     global read_count, read_buffer, READ_BUFFER_SIZE
     try:
-        if read_count <= 100000:
+        if read_count <= 600000:
             if read_count == 0:
                 read_buffer = file_handler["in"].readlines()
             domain = read_buffer[read_count]
@@ -143,10 +145,13 @@ def allocate(ready_queue, running_queue, waiting_queue, result_list):
 
         global thread_count
         thread_count += 1
-        if thread_count % 500 == 0:
-            time.sleep(2)
+        if thread_count % 1000 == 0:
+            '''time.sleep(2)
             if thread_count % 1000 == 0 and len(running_queue) > MAX_LENGTH / 2:
-                time.sleep(5)
+                time.sleep(5)'''
+            while len(running_queue) > 0:
+                time.sleep(2)
+
         else:
             time.sleep(0.01)
         domain = ready2running(ready_queue, running_queue)

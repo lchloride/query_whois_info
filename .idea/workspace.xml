@@ -4,8 +4,7 @@
     <option name="SCOPE_TYPE" value="3" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="aeba6bc2-cbd2-49bc-a4b1-08de56f9b747" name="Default" comment="Use thread pool to improve efficiency of creating/destroying thread. Fix attribute error of _strptime and none query result">
-      <change type="NEW" beforePath="" afterPath="$PROJECT_DIR$/socks.py" />
+    <list default="true" id="aeba6bc2-cbd2-49bc-a4b1-08de56f9b747" name="Default" comment="">
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/.idea/workspace.xml" afterPath="$PROJECT_DIR$/.idea/workspace.xml" />
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/query_multi_threads.py" afterPath="$PROJECT_DIR$/query_multi_threads.py" />
     </list>
@@ -27,8 +26,8 @@
       <file leaf-file-name="query_multi_threads.py" pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/query_multi_threads.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="240">
-              <caret line="153" column="17" lean-forward="true" selection-start-line="153" selection-start-column="17" selection-end-line="153" selection-end-column="17" />
+            <state relative-caret-position="20">
+              <caret line="131" column="37" lean-forward="false" selection-start-line="131" selection-start-column="37" selection-end-line="131" selection-end-column="37" />
               <folding>
                 <element signature="e#43#59#0" expanded="true" />
               </folding>
@@ -83,8 +82,8 @@
       <file leaf-file-name="whois.py" pinned="false" current-in-tab="false">
         <entry file="file://$USER_HOME$/.local/lib/python2.7/site-packages/whois/whois.py">
           <provider selected="true" editor-type-id="text-editor">
-            <state relative-caret-position="3780">
-              <caret line="193" column="35" lean-forward="false" selection-start-line="193" selection-start-column="30" selection-end-line="193" selection-end-column="35" />
+            <state relative-caret-position="2020">
+              <caret line="105" column="38" lean-forward="false" selection-start-line="105" selection-start-column="38" selection-end-line="105" selection-end-column="38" />
               <folding />
             </state>
           </provider>
@@ -122,17 +121,17 @@
         <option value="$PROJECT_DIR$/BaseThread.py" />
         <option value="$PROJECT_DIR$/log.py" />
         <option value="$PROJECT_DIR$/threadpool.py" />
-        <option value="$USER_HOME$/.local/lib/python2.7/site-packages/whois/whois.py" />
         <option value="$USER_HOME$/.local/lib/python2.7/site-packages/whois/__init__.py" />
+        <option value="$USER_HOME$/.local/lib/python2.7/site-packages/whois/whois.py" />
         <option value="$PROJECT_DIR$/query_multi_threads.py" />
       </list>
     </option>
   </component>
   <component name="ProjectFrameBounds">
-    <option name="x" value="65" />
-    <option name="y" value="-4" />
-    <option name="width" value="1301" />
-    <option name="height" value="772" />
+    <option name="x" value="64" />
+    <option name="y" value="-11" />
+    <option name="width" value="1303" />
+    <option name="height" value="780" />
   </component>
   <component name="ProjectLevelVcsManager" settingsEditedManually="true" />
   <component name="ProjectView">
@@ -150,6 +149,7 @@
       <foldersAlwaysOnTop value="true" />
     </navigator>
     <panes>
+      <pane id="Scope" />
       <pane id="ProjectPane">
         <subPane>
           <PATH>
@@ -179,7 +179,6 @@
         </subPane>
       </pane>
       <pane id="Scratches" />
-      <pane id="Scope" />
     </panes>
   </component>
   <component name="PropertiesComponent">
@@ -373,17 +372,25 @@
       <option name="project" value="LOCAL" />
       <updated>1491541953907</updated>
     </task>
-    <option name="localTasksCounter" value="5" />
+    <task id="LOCAL-00005" summary="Use simple proxy server to avoid IP address blocking">
+      <created>1491818547637</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1491818547637</updated>
+    </task>
+    <option name="localTasksCounter" value="6" />
     <servers />
   </component>
   <component name="ToolWindowManager">
-    <frame x="65" y="-4" width="1301" height="772" extended-state="6" />
+    <frame x="64" y="-11" width="1303" height="780" extended-state="6" />
+    <editor active="true" />
     <layout>
       <window_info id="Project" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" show_stripe_button="true" weight="0.24980783" sideWeight="0.5" order="0" side_tool="false" content_ui="combo" />
       <window_info id="TODO" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="6" side_tool="false" content_ui="tabs" />
       <window_info id="Event Log" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.32884902" sideWeight="0.5" order="7" side_tool="true" content_ui="tabs" />
       <window_info id="Run" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.32884902" sideWeight="0.5" order="2" side_tool="false" content_ui="tabs" />
-      <window_info id="Version Control" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="true" show_stripe_button="true" weight="0.30493274" sideWeight="0.5" order="7" side_tool="false" content_ui="tabs" x="65" y="272" width="1301" height="220" />
+      <window_info id="Version Control" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.30493274" sideWeight="0.5" order="7" side_tool="false" content_ui="tabs" x="65" y="272" width="1301" height="220" />
       <window_info id="Python Console" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.32884902" sideWeight="0.5" order="7" side_tool="false" content_ui="tabs" />
       <window_info id="Structure" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.25" sideWeight="0.5" order="1" side_tool="false" content_ui="tabs" />
       <window_info id="Terminal" active="false" anchor="bottom" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" show_stripe_button="true" weight="0.33" sideWeight="0.5" order="7" side_tool="false" content_ui="tabs" />
@@ -445,7 +452,8 @@
     <MESSAGE value="优化大量连接时的自动休眠规则" />
     <MESSAGE value="Use highly efficient I/O module for reading and writing" />
     <MESSAGE value="Use thread pool to improve efficiency of creating/destroying thread. Fix attribute error of _strptime and none query result" />
-    <option name="LAST_COMMIT_MESSAGE" value="Use thread pool to improve efficiency of creating/destroying thread. Fix attribute error of _strptime and none query result" />
+    <MESSAGE value="Use simple proxy server to avoid IP address blocking" />
+    <option name="LAST_COMMIT_MESSAGE" value="Use simple proxy server to avoid IP address blocking" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -851,14 +859,6 @@
         </state>
       </provider>
     </entry>
-    <entry file="file://$USER_HOME$/.local/lib/python2.7/site-packages/whois/whois.py">
-      <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="3780">
-          <caret line="193" column="35" lean-forward="false" selection-start-line="193" selection-start-column="30" selection-end-line="193" selection-end-column="35" />
-          <folding />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$USER_HOME$/.local/lib/python2.7/site-packages/whois/__init__.py">
       <provider selected="true" editor-type-id="text-editor">
         <state relative-caret-position="580">
@@ -867,10 +867,18 @@
         </state>
       </provider>
     </entry>
+    <entry file="file://$USER_HOME$/.local/lib/python2.7/site-packages/whois/whois.py">
+      <provider selected="true" editor-type-id="text-editor">
+        <state relative-caret-position="2020">
+          <caret line="105" column="38" lean-forward="false" selection-start-line="105" selection-start-column="38" selection-end-line="105" selection-end-column="38" />
+          <folding />
+        </state>
+      </provider>
+    </entry>
     <entry file="file://$PROJECT_DIR$/query_multi_threads.py">
       <provider selected="true" editor-type-id="text-editor">
-        <state relative-caret-position="240">
-          <caret line="153" column="17" lean-forward="true" selection-start-line="153" selection-start-column="17" selection-end-line="153" selection-end-column="17" />
+        <state relative-caret-position="20">
+          <caret line="131" column="37" lean-forward="false" selection-start-line="131" selection-start-column="37" selection-end-line="131" selection-end-column="37" />
           <folding>
             <element signature="e#43#59#0" expanded="true" />
           </folding>
