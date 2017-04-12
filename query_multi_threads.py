@@ -21,7 +21,7 @@ from threadpool import WorkRequest, WorkerThread, ThreadPool, NoResultsPending
 reload(sys)
 sys.setdefaultencoding('utf8')
 
-MAX_LENGTH = 100
+MAX_LENGTH = 120
 RESULT_SET_DOMAIN_COL = 0
 RESULT_SET_ISFINISHED_COL = 1
 RESULT_SET_DETAILS_COL = 2
@@ -42,60 +42,90 @@ read_count = 0
 logger = None
 server_stat = {}
 server_ips = {}
-read_buffer = []
-READ_BUFFER_SIZE = 1000
+read_buffer = {}
+server_list = []
 
 
 # 获取whois信息的函数，调用pywhois库的改进版本；获取的信息为json格式Unicode字符串
 def query_whois(domain_set, result_list, **kwds):
     try:
         if domain_set["try_times"] % 3 == 0:
-            w = whois.whois(domain_set["domain"])
+            w = whois.whois(domain_set["domain"], domain_set["server"])
         elif domain_set["try_times"] % 3 == 1:
             w = whois.whois(domain_set["domain"], None, {"ip": "120.24.245.193", "port": 1080})
-            #w = whois.whois(domain_set["domain"])
         elif domain_set["try_times"] % 3 == 2:
             w = whois.whois(domain_set["domain"], None, {"ip": "27.152.181.217", "port": 8080})
-            #w = whois.whois(domain_set["domain"])
     except socket.error, arg:
         err_str = str(arg[0]).replace('\n', '')
         result_list.put((domain_set, False, "SocketError: %s at server [%s] times:%d"
                          % (err_str, arg[1], domain_set["try_times"])))
         logger.write_log("SocketError: %s with [%s] at server [%s] times:%d"
-                         % (err_str, domain_set["domain"], arg[1], domain_set["try_times"]), SCREEN | FILE_ERR)
+                         % (err_str, domain_set["domain"], arg[1], domain_set["try_times"]),
+                         SCREEN | FILE_ERR)
+        return False
     except PywhoisError, arg:
         err_str = str(arg).replace('\n', '')
         result_list.put((domain_set, False, "PywhoisError:" + err_str))
         logger.write_log("PywhoisError: %s with %s" % (err_str[:20], domain_set["domain"]),
                          SCREEN | FILE_ERR)
         if err_str.find('No match for') == -1 and \
-            err_str.find('Not found') == -1 and \
-                err_str.find('not found') == -1:
+                        err_str.find('Not found') == -1 and \
+                        err_str.find('not found') == -1:
             logger.write_log("PywhoisError: %s with %s" % (err_str, domain_set["domain"]),
                              FILE_WHOIS_ERR)
+        return False
     except AttributeError, arg:
         err_str = str(arg).replace('\n', '')
         result_list.put((domain_set, False, "AttributeError:" + err_str))
         logger.write_log("AttributeError: %s with [%s]"
                          % (err_str, domain_set["domain"]), SCREEN | FILE_ERR)
+        return False
         # logger.write_log("AttributeError: %s with [%s]. Trace:%s"
         #               % (err_str, domain_set["domain"], traceback.print_stack()), SCREEN|FILE_ERR)
     else:
         if w is not None:
             result_list.put((domain_set, True, w))
+            return True
         else:
             result_list.put((domain_set, False, "Result is None."))
+            return False
+
+
+def read_domain():
+    global server_list
+    try:
+        fin_server = open("fin_server.txt", "r")
+    except IOError:
+        domain_list = file_handler["in"].readlines()
+        read_buffer["localhost"] = domain_list
+    else:
+        for line in fin_server:
+            domain, server = line[:-1].split(" / ")
+            if server.find(".") == -1:
+                server = "localhost"
+            if server not in read_buffer.keys():
+                read_buffer[server] = []
+            read_buffer[server].append(domain)
+    server_list = read_buffer.keys()
+    logger.write_log("server_list:%s" % server_list, SCREEN | FILE_OUT)
 
 
 def read_domain_to_ready(queue):
-    global read_count, read_buffer, READ_BUFFER_SIZE
+    global read_count, read_buffer
     try:
         if read_count <= 600000:
-            if read_count == 0:
-                read_buffer = file_handler["in"].readlines()
-            domain = read_buffer[read_count]
-            if not domain:
+            server = server_list[read_count % len(server_list)]
+            i = 0
+            while i < len(server_list) and len(read_buffer[server]) == 0:
+                i += 1
+                server = server_list[(read_count+i) % len(server_list)]
+            if i == len(server_list):
                 return False
+            else:
+                domain = read_buffer[server][0]
+                del read_buffer[server][0]
+                if not domain:
+                    return False
         else:
             return False
     except IOError, args:
@@ -105,7 +135,7 @@ def read_domain_to_ready(queue):
         return False
     else:
         read_count += 1
-        item = {"domain": domain[:-1], "try_times": 0, "server": None,
+        item = {"domain": domain, "try_times": 0, "server": server,
                 "error_msg": [], "is_error": False}
         queue.put(item)
         return True
@@ -145,13 +175,10 @@ def allocate(ready_queue, running_queue, waiting_queue, result_list):
 
         global thread_count
         thread_count += 1
-        if thread_count % 1000 == 0:
-            '''time.sleep(2)
+        if thread_count % 500 == 0:
+            time.sleep(2)
             if thread_count % 1000 == 0 and len(running_queue) > MAX_LENGTH / 2:
-                time.sleep(5)'''
-            while len(running_queue) > 0:
-                time.sleep(2)
-
+                time.sleep(5)
         else:
             time.sleep(0.01)
         domain = ready2running(ready_queue, running_queue)
@@ -223,19 +250,8 @@ def main():
     file_handler["out"] = open("fout.txt", "w")
     file_handler["err"] = open("ferr.txt", "w")
     file_handler["retry"] = open("retry.txt", "w")
-    file_handler["in_server"] = open("fin_server.txt", "w")
+    file_handler["in_server"] = open("fin_server2.txt", "w")
     file_handler["whois_err"] = open("pywhoiserror.txt", "w")
-
-    ready_queue = Queue(MAX_LENGTH)
-    running_queue = []
-    waiting_queue = []
-    result_list = Queue(MAX_LENGTH)
-
-    # 读取一部分域名进入queue list
-    for i in range(MAX_LENGTH):
-        if not read_domain_to_ready(ready_queue):
-            print "Cannot Initialize Ready Queue."
-            return
 
     # 创建日志输出线程
     global logger
@@ -243,6 +259,19 @@ def main():
                              file_handler["retry"], file_handler["in_server"],
                              file_handler["whois_err"]]
     logger = Log(MAX_LENGTH * 10, out_file_handler_list)
+
+    ready_queue = Queue(MAX_LENGTH)
+    running_queue = []
+    waiting_queue = []
+    result_list = Queue(MAX_LENGTH)
+
+    read_domain()
+
+    # 读取一部分域名进入queue list
+    for i in range(MAX_LENGTH):
+        if not read_domain_to_ready(ready_queue):
+            print "Cannot Initialize Ready Queue."
+            return
 
     st_time = time.time()
 
